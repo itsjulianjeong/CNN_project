@@ -1,0 +1,49 @@
+# -----------------------------------------------------------------------------
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.pyo
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+*.env
+
+# dotenv
+.env
+
+# VS Code
+.vscode/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (민감 이미지 데이터)
+data/*
+!data/README.md
+!data/processed/.gitkeep
+!src/.gitkeep
+
+# Model Weights / Checkpoints (용량 큰 파일)
+*.h5
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# Logs / Outputs
+logs/
+*.log
+output/
+runs/
+
+# Colab
+*.ipynb_checkpoints
