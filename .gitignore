@@ -42,6 +42,9 @@ src/models/01_Basic_Model/*
 *.onnx
 *.keras
 
+# Results/Reports
+results/reports/bayesian_tuner_results/eye_status_bayesian_cnn/
+
 # Logs / Outputs
 logs/
 *.log
