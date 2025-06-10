@@ -1,0 +1,1 @@
+# GrayScaling 변환 함수
