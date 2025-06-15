@@ -1,22 +1,28 @@
 # 메인 로직 (실시간 감지)
-
 import cv2
 import numpy as np
 import tensorflow as tf
 import mediapipe as mp
 import time
 import os
-from playsound import playsound
+import pygame
 
 # utils/*.py 에서 함수들 import
 # 이미지 전처리 함수 통합 (grayscale, 이미지 크기 조정, 픽셀값 0~1 사이로 정규화)
-from utils.image_utils import to_grayscale, resize_image, normalize_image  
-from utils.draw_result import draw_prediction  # 텍스트 시각화
+from webcam_app.utils.image_utils import to_grayscale, resize_image, normalize_image
+from webcam_app.utils.draw_result import draw_prediction
 
+def play_beep(beep_path):
+    if not pygame.mixer.get_init():
+        pygame.mixer.init()
+    if not pygame.mixer.music.get_busy():
+        pygame.mixer.music.load(beep_path)
+        pygame.mixer.music.play()
 
 def run_detection():
     # 05번 모델 로드
-    MODEL_PATH="model/readjusted_model.kreas"
+    BASE_DIR=os.path.dirname(os.path.abspath(__file__))
+    MODEL_PATH=os.path.join(BASE_DIR, "model", "readjusted_model.keras")
     model=tf.keras.models.load_model(MODEL_PATH)
 
     # MediaPipe 얼굴/눈 탐지
@@ -30,7 +36,7 @@ def run_detection():
         max_num_faces=1,  # max_num_faces=1: 최대 1개의 얼굴만 탐지
         refine_landmarks=True,  # 정밀 홍채 추적 (test_facemesh/test_facemesh_landmarks.ipynb 참고)
         min_detection_confidence=0.5,  # 첫 탐지시 얼굴로 인식되는 최소 신뢰도 -> 얼굴 탐지가 약한 경우 높이기
-        min_tracking_confidence=0.5  # 이후 프레임에서 얼굴 추적 신뢰도 -> 얼굴이 잘 추적되지 않는 경우 높이기
+        #min_tracking_confidence=0.5  # 이후 프레임에서 얼굴 추적 신뢰도 -> 얼굴이 잘 추적되지 않는 경우 높이기
     )
 
     # MediaPipe 얼굴 landmark idx -> 눈 주변 landmark 번호
@@ -41,11 +47,12 @@ def run_detection():
     # 웹캠 연결(웹캠 하나만 연결되어 있으니까 0이 기본)
     capture=cv2.VideoCapture(0)  
 
-    WARNING_BEEP="webcam_app/utils/beep.mp3"
+    # Sound Effect by <a href="https://pixabay.com/users/freesound_community-46691455/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=6387">freesound_community</a> from <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=6387">Pixabay</a>
+    WARNING_BEEP=os.path.join(BASE_DIR, "utils", "beep.mp3")
     CAPTURE_DIR="webcam_app/captures"  # cv2.imwrite() -> 졸음 상태 스크린샷
     os.makedirs(CAPTURE_DIR, exist_ok=True)
 
-    CLOSED_FRAME_THRESHOLD=30  # 약 1초 (30fps 기준) -> 연속으로 close 상태가 감지돼야 하는 프레임 수
+    CLOSED_FRAME_THRESHOLD=15  # 약 1초 (30fps 기준) -> 연속으로 close 상태가 감지돼야 하는 프레임 수
     closed_frame_count=0  # close 상태가 몇 프레임 동안 지속되었는지 count -> 눈을 뜨면 0으로 리셋
 
     while capture.isOpened():  # 웹캠이 열려있는 동안 반복
@@ -97,17 +104,17 @@ def run_detection():
                     
                     # 배열 형태로 반환받음(i.g., array([[0.xxxx]]))  -> [0][0]은 첫 번째 배치의 첫 번째 출력값
                     # pred는 확률값(threshold 필요)
-                    pred=model.predict(input_tensor, verbose=0)[0][0]
+                    raw_pred=model.predict(input_tensor, verbose=0)[0][0]
+                    pred=1.0-raw_pred  # open 확률로 재해석
                     
                     # open, closed 표시
                     # l_x1: 왼쪽 눈 bbox 왼쪽 x좌표
                     # l_y1-10: y좌표는 눈 바로 위에 텍스트가 뜨도록 하기 위해 -10
-                    # pred: 예측 결과값: 0.0~1.0 사이 확률
-                    draw_prediction(frame, (x1, y1-10), pred)
+                    draw_prediction(frame, (x1, y1-10), pred, box_coords=(x1, y1, x2, y2))
                     
                     eye_preds.append(pred)
 
-                CLOSE_THRESHOLD=0.5
+                CLOSE_THRESHOLD=0.7
                 # all: 리스트 안 모든 값이 True일 때만 True
                 # 양쪽 눈의 예측 확률(eye_preds)이 모두 CLOSE_THRESHOLD(0.5) 보다 작을 때,
                 # 즉 두 눈 모두 close 상태라고 판단될 때
@@ -131,7 +138,7 @@ def run_detection():
                         # 경고음 
                         # block=False: 백그라운드 재생
                         # -> 프로그램이 경고음이 끝나기를 기다리지 않고 바로 다음 프레임 처리
-                        playsound(WARNING_BEEP, block=False)
+                        play_beep(WARNING_BEEP)
                 else:
                     closed_frame_count=0
 
