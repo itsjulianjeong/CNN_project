@@ -56,3 +56,5 @@ runs/
 
 # WebCam
 !webcam_app/model/*
+webcam_app/captures/*
+!webcam_app/captures/README.md
