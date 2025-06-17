@@ -6,6 +6,7 @@ import mediapipe as mp
 import time
 import os
 import pygame
+from collections import deque  # 최근 프레임 예측값 추적용
 
 # utils/*.py 에서 함수들 import
 # 이미지 전처리 함수 통합 (grayscale, 이미지 크기 조정, 픽셀값 0~1 사이로 정규화)
@@ -55,6 +56,10 @@ def run_detection():
     CLOSED_FRAME_THRESHOLD=15  # 약 1초 (30fps 기준) -> 연속으로 close 상태가 감지돼야 하는 프레임 수
     closed_frame_count=0  # close 상태가 몇 프레임 동안 지속되었는지 count -> 눈을 뜨면 0으로 리셋
 
+    SMOOTHING_WINDOW_SIZE=7
+    right_eye_buffer=deque(maxlen=SMOOTHING_WINDOW_SIZE)
+    left_eye_buffer=deque(maxlen=SMOOTHING_WINDOW_SIZE)
+    
     while capture.isOpened():  # 웹캠이 열려있는 동안 반복
         TorF, frame = capture.read()  # TorF(True/False): 프레임을 제대로 읽었는지, frame: 실제로 읽어온 영상 프레임 (numpy 배열)
         if not TorF: break # 프레임 읽기 실패 시(웹캠 연결이 끊기거나 에러가 나면) 루프 종료
@@ -107,22 +112,22 @@ def run_detection():
                     raw_pred=model.predict(input_tensor, verbose=0)[0][0]
                     pred=1.0-raw_pred  # open 확률로 재해석
                     
-                    # open, closed 표시
-                    # l_x1: 왼쪽 눈 bbox 왼쪽 x좌표
-                    # l_y1-10: y좌표는 눈 바로 위에 텍스트가 뜨도록 하기 위해 -10
-                    draw_prediction(frame, (x1, y1-10), pred, box_coords=(x1, y1, x2, y2))
-                    
-                    eye_preds.append(pred)
-
-                CLOSE_THRESHOLD=0.7
-                # all: 리스트 안 모든 값이 True일 때만 True
-                # 양쪽 눈의 예측 확률(eye_preds)이 모두 CLOSE_THRESHOLD(0.5) 보다 작을 때,
-                # 즉 두 눈 모두 close 상태라고 판단될 때
+                    # 각각의 눈 예측값을 버퍼에 저장
+                    if eye=="right":
+                        right_eye_buffer.append(pred)
+                    else:
+                        left_eye_buffer.append(pred)
                 
-                # 참고로 05번 모델 파일을 보면 Dense에서 activation function이 sigmoid 였기 때문에  
-                # 0~1 사이 확률 출력 -> 0.5를 기준으로 open, close로 결정했었음  
-                # 따라서 최종 이진 판단 시 threshold를 기준으로 분기함
-                if all(pred < CLOSE_THRESHOLD for pred in eye_preds):  
+                # 버퍼의 평균값을 사용해 예측값을 안정화
+                right_mean=np.mean(right_eye_buffer) if right_eye_buffer else 1.0
+                left_mean=np.mean(left_eye_buffer) if left_eye_buffer else 1.0
+                
+                # 안정화된 예측 결과를 시각화
+                draw_prediction(frame, (r_x1, r_y1-10), right_mean, box_coords=(r_x1, r_y1, r_x2, r_y2))
+                draw_prediction(frame, (l_x1, l_y1-10), left_mean, box_coords=(l_x1, l_y1, l_x2, l_y2))
+                
+                CLOSE_THRESHOLD=0.7
+                if all(p < CLOSE_THRESHOLD for p in [right_mean, left_mean]):
                     closed_frame_count += 1  # 감김 프레임 누적 시키고
                     if closed_frame_count >= CLOSED_FRAME_THRESHOLD:  # 1초 이상 close 지속됐을때
                         # 이미지 저장
