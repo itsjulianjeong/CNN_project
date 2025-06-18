@@ -58,3 +58,6 @@ runs/
 !webcam_app/model/*
 webcam_app/captures/*
 !webcam_app/captures/README.md
+
+# Model
+!src/models/Model_final/model_final.keras
