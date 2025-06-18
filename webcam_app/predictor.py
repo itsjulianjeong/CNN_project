@@ -64,6 +64,7 @@ def run_detection():
         TorF, frame = capture.read()  # TorF(True/False): 프레임을 제대로 읽었는지, frame: 실제로 읽어온 영상 프레임 (numpy 배열)
         if not TorF: break # 프레임 읽기 실패 시(웹캠 연결이 끊기거나 에러가 나면) 루프 종료
 
+        frame=cv2.flip(frame, 1)  # 좌우 반전
         frame_rgb=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # MediaPipe는 RGB 입력을 요구
         
         results=FACE_MESH.process(frame_rgb)  # 얼굴 랜드마크 추출
