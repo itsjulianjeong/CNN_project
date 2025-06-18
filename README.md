@@ -16,28 +16,28 @@ CNN 기반의 눈 상태 분류 모델을 활용해 졸음운전 상태를 실�
 ---
 
 # 프로젝트 구조
-CNN_project/
-├── data/
-│ ├── raw/ # 원본 이미지 (Kaggle)
-│ └── processed/ # 학습용 전처리 데이터
-├── notebooks/
-│ ├── data_preprocessing/ # 전처리 노트북
-│ └── model_training/ # CNN 학습 노트북
-├── results/
-│ ├── images/ # 시각화 결과 (loss, confusion matrix 등)
-│ └── reports/ # classification_report.txt 저장
-├── webcam_app/
-│ ├── model/ # 학습된 모델 파일 (.keras)
-│ ├── captures/ # 졸음 상태 감지 시 스크린샷 저장 폴더
-│ ├── utils/ # 전처리, 시각화, 경고음 재생 유틸
-│ │ ├── image_utils.py
-│ │ ├── draw_result.py
-│ │ ├── beep.mp3
-│ │ └── \__init\__.py
-│ ├── \__init\__.py 
-│ └── predictor.py # 실시간 예측 메인 코드
-├── drowsiness_detector.py # 실행 코드
-└── README.md
+CNN_project/  
+├── data/  
+│ ├── raw/ # 원본 이미지 (Kaggle)  
+│ └── processed/ # 학습용 전처리 데이터  
+├── notebooks/  
+│ ├── data_preprocessing/ # 전처리 노트북  
+│ └── model_training/ # CNN 학습 노트북  
+├── results/  
+│ ├── images/ # 시각화 결과 (loss, confusion matrix 등)  
+│ └── reports/ # classification_report.txt 저장  
+├── webcam_app/  
+│ ├── model/ # 학습된 모델 파일 (.keras)  
+│ ├── captures/ # 졸음 상태 감지 시 스크린샷 저장 폴더  
+│ ├── utils/ # 전처리, 시각화, 경고음 재생 유틸  
+│ │ ├── image_utils.py  
+│ │ ├── draw_result.py  
+│ │ ├── beep.mp3  
+│ │ └── \__init\__.py  
+│ ├── \__init\__.py   
+│ └── predictor.py # 실시간 예측 메인 코드  
+├── drowsiness_detector.py # 실행 코드  
+└── README.md  
 
 ---
 
