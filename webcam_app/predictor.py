@@ -4,7 +4,6 @@ import tensorflow as tf
 import mediapipe as mp
 import time
 import os
-import pygame
 from collections import deque
 
 from webcam_app.utils.image_utils import to_grayscale, resize_image, normalize_image
