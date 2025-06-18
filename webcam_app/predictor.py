@@ -55,6 +55,7 @@ def run_detection():
 
     CLOSED_FRAME_THRESHOLD=15  # 약 1초 (30fps 기준) -> 연속으로 close 상태가 감지돼야 하는 프레임 수
     closed_frame_count=0  # close 상태가 몇 프레임 동안 지속되었는지 count -> 눈을 뜨면 0으로 리셋
+    drowsy_start_time=None  # 졸음 상태 시작 시각
 
     SMOOTHING_WINDOW_SIZE=7
     right_eye_buffer=deque(maxlen=SMOOTHING_WINDOW_SIZE)
@@ -96,8 +97,6 @@ def run_detection():
                 # (rx1, ry1)~(rx2, ry2) 좌표로 자르면 눈 부분만 잘라낼 수 있음
 
                 eyes={"right": (r_x1, r_x2, r_y1, r_y2), "left": (l_x1, l_x2, l_y1, l_y2)}
-                eye_preds=[]  # 좌우 눈 각각의 예측 결과(확률값) 저장용
-                            # i.g., [0.1, 0.99] → 두 눈 다 떠 있음 / [0.00, 0.01] -> 두 눈 다 감김
                 
                 for eye, (x1, x2, y1, y2) in eyes.items():
                     eye_img=frame[y1:y2, x1:x2]  # (height, width) 순서 -> (y, x) 순서
@@ -131,30 +130,35 @@ def run_detection():
                 if all(p < CLOSE_THRESHOLD for p in [right_mean, left_mean]):
                     closed_frame_count += 1  # 감김 프레임 누적 시키고
                     if closed_frame_count >= CLOSED_FRAME_THRESHOLD:  # 1초 이상 close 지속됐을때
-                        # 이미지 저장
-                        timestamp=int(time.time())
-                        capture_path=os.path.join(CAPTURE_DIR, f"drowsy_{timestamp}.jpg")
-                        cv2.imwrite(capture_path, frame)
+                        current_time=time.time()
                         
+                        if drowsy_start_time is None:
+                            drowsy_start_time=current_time
+                            timestamp=int(current_time)
+                            capture_path=os.path.join(CAPTURE_DIR, f"drowsy_{timestamp}.jpg")
+                            cv2.imwrite(capture_path, frame)
+                            play_beep(WARNING_BEEP)
+                        elif current_time - drowsy_start_time >= 1.0:
+                            drowsy_start_time=current_time
+                            timestamp=int(current_time)
+                            capture_path=os.path.join(CAPTURE_DIR, f"drowsy_{timestamp}.jpg")
+                            cv2.imwrite(capture_path, frame)
+                            play_beep(WARNING_BEEP)
+                            
                         # 빨간색 오버레이 적용
-                        overlay=frame.copy()
-                        overlay[:, :, 2]=np.clip(overlay[:, :, 2]+100, 0, 255)  # BGR 중 R를 2로 -> 프레임 전체 RED로
-                        cv2.addWeighted(overlay, 0.4, frame, 0.6, 0, frame)  # addWeighted()와 합성해서 빨간 반투명 오버레이
-                        
-                        # 경고음 
-                        # block=False: 백그라운드 재생
-                        # -> 프로그램이 경고음이 끝나기를 기다리지 않고 바로 다음 프레임 처리
-                        play_beep(WARNING_BEEP)
+                        overlay=np.full(frame.shape, (0, 0, 255), dtype=np.uint8)
+                        cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
                 else:
                     closed_frame_count=0
+                    drowsy_start_time=None
 
-        cv2.imshow("눈 상태 감지 프로그램", frame)  # 이미지 창 열기
+        cv2.imshow("Eye State Detector", frame)  # 이미지 창 열기
         
-        # q누르면 종료
+        # esc누르면 종료
         # cv2.waitKey(1): 1ms 동안 키보드 입력 대기(1 프레임 단위)
         # & 0xFF: Windows와 Linux 환경에서 키보드 입력을 일관되게 처리하기 위한 마스크
-        # ord("q"): "q" ASCII 값
-        if cv2.waitKey(1) & 0xFF == ord("q"): break  
+        # 27: sec
+        if cv2.waitKey(1) & 0xFF == 27: break  
 
     capture.release()  # 웹캠 자원 반납
     cv2.destroyAllWindows()  # 이미지 창 닫기
