@@ -1,97 +1,110 @@
-# import sys
-# sys.path.append("test")
-
 import cv2
 import numpy as np
 import tensorflow as tf
 import mediapipe as mp
 import time
+import os
 from collections import deque
-from webcam.utils.image_utils import preprocess_eye_image
+
+from webcam.utils.image_utils import resize_image, normalize_image
 from webcam.utils.draw_result import draw_prediction
+from webcam.utils.sound_utils import play_beep
 
-# 모델 불러오기
-model=tf.keras.models.load_model("result/model.keras")
-
-# MediaPipe 초기화
-mp_face_mesh=mp.solutions.face_mesh
-face_mesh=mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1,
-                                refine_landmarks=True, min_detection_confidence=0.5)
-
-# 눈 좌표 인덱스 (왼쪽, 오른쪽)
-LEFT_EYE_IDX=[33, 133]
-RIGHT_EYE_IDX=[362, 263]
-
-# 설정
-CLOSED_FRAME_THRESHOLD=15
-FRAME_HISTORY=deque(maxlen=30)
-
-# 전처리 및 예측 함수
-def predict_eye_state(eye_img):
-    input_tensor=np.expand_dims(eye_img, axis=0)
-    pred=model.predict(input_tensor, verbose=0)[0][0]
-    return "closed" if pred<0.5 else "open"
-
-# 실행 함수
 def run_detection():
-    cap=cv2.VideoCapture(0)
-    closed_counter=0
+    BASE_DIR=os.path.dirname(os.path.abspath(__file__))
+    MODEL_PATH=os.path.join(BASE_DIR, "model", "model.h5")
+    model=tf.keras.models.load_model(MODEL_PATH)
 
-    while cap.isOpened():
-        ret, frame=cap.read()
-        if not ret:
-            break
+    MP_FACE=mp.solutions.face_mesh
+    FACE_MESH=MP_FACE.FaceMesh(
+        static_image_mode=False,
+        max_num_faces=1,
+        refine_landmarks=True,
+        min_detection_confidence=0.5
+    )
 
-        rgb_frame=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        result=face_mesh.process(rgb_frame)
+    R_EYE_IDX=list(range(469, 473))
+    L_EYE_IDX=list(range(474, 478))
 
-        if result.multi_face_landmarks:
-            h, w=frame.shape[:2]
-            landmarks=result.multi_face_landmarks[0].landmark
+    capture=cv2.VideoCapture(0)
 
-            # 눈 영역 추출
-            left_eye_pts=[landmarks[i] for i in LEFT_EYE_IDX]
-            right_eye_pts=[landmarks[i] for i in RIGHT_EYE_IDX]
+    WARNING_BEEP=os.path.join(BASE_DIR, "utils", "beep.mp3")
+    CAPTURE_DIR=os.path.join(BASE_DIR, "captures")
+    os.makedirs(CAPTURE_DIR, exist_ok=True)
 
-            lx1, ly1=int(left_eye_pts[0].x*w), int(left_eye_pts[0].y*h)
-            lx2, ly2=int(left_eye_pts[1].x*w), int(left_eye_pts[1].y*h)
-            rx1, ry1=int(right_eye_pts[0].x*w), int(right_eye_pts[0].y*h)
-            rx2, ry2=int(right_eye_pts[1].x*w), int(right_eye_pts[1].y*h)
+    CLOSED_FRAME_THRESHOLD=15
+    closed_frame_count=0
+    drowsy_start_time=None
 
-            # 박스 범위 확장
-            margin=10
-            left_eye=frame[max(0, min(ly1, ly2)-margin):min(h, max(ly1, ly2)+margin),
-                           max(0, min(lx1, lx2)-margin):min(w, max(lx1, lx2)+margin)]
-            right_eye=frame[max(0, min(ry1, ry2)-margin):min(h, max(ry1, ry2)+margin),
-                            max(0, min(rx1, rx2)-margin):min(w, max(rx1, rx2)+margin)]
+    SMOOTHING_WINDOW_SIZE=7
+    right_eye_buffer=deque(maxlen=SMOOTHING_WINDOW_SIZE)
+    left_eye_buffer=deque(maxlen=SMOOTHING_WINDOW_SIZE)
 
-            # 둘 다 존재할 때만 예측
-            if left_eye.size and right_eye.size:
-                left_proc=preprocess_eye_image(left_eye)
-                right_proc=preprocess_eye_image(right_eye)
+    while capture.isOpened():
+        TorF, frame=capture.read()
+        if not TorF: break
 
-                left_state=predict_eye_state(left_proc)
-                right_state=predict_eye_state(right_proc)
+        frame=cv2.flip(frame, 1)
+        frame_rgb=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results=FACE_MESH.process(frame_rgb)
 
-                state="closed" if left_state=="closed" and right_state=="closed" else "open"
+        if results.multi_face_landmarks:
+            for face_landmarks in results.multi_face_landmarks:
+                h, w, _=frame.shape
 
-                if state=="closed":
-                    closed_counter+=1
+                right_eye_points=[(int(face_landmarks.landmark[idx].x * w),
+                                   int(face_landmarks.landmark[idx].y * h)) for idx in R_EYE_IDX]
+                left_eye_points=[(int(face_landmarks.landmark[idx].x * w),
+                                  int(face_landmarks.landmark[idx].y * h)) for idx in L_EYE_IDX]
+
+                r_x1, r_x2 = min(p[0] for p in right_eye_points), max(p[0] for p in right_eye_points)
+                r_y1, r_y2 = min(p[1] for p in right_eye_points), max(p[1] for p in right_eye_points)
+                l_x1, l_x2 = min(p[0] for p in left_eye_points), max(p[0] for p in left_eye_points)
+                l_y1, l_y2 = min(p[1] for p in left_eye_points), max(p[1] for p in left_eye_points)
+
+                eyes={"right": (r_x1, r_x2, r_y1, r_y2), "left": (l_x1, l_x2, l_y1, l_y2)}
+
+                for eye, (x1, x2, y1, y2) in eyes.items():
+                    eye_img=frame[y1:y2, x1:x2]
+                    if eye_img.size == 0: continue
+                    #gray=to_grayscale(eye_img)
+                    resized=resize_image(eye_img)
+                    normalized=normalize_image(resized)
+                    input_tensor=np.expand_dims(normalized, axis=0)
+                    raw_pred=model.predict(input_tensor, verbose=0)[0][0]
+                    pred=1.0 - raw_pred  # open 확률
+
+                    if eye=="right":
+                        right_eye_buffer.append(pred)
+                    else:
+                        left_eye_buffer.append(pred)
+
+                right_mean=np.mean(right_eye_buffer) if right_eye_buffer else 1.0
+                left_mean=np.mean(left_eye_buffer) if left_eye_buffer else 1.0
+
+                draw_prediction(frame, (r_x1, r_y1-10), right_mean, box_coords=(r_x1, r_y1, r_x2, r_y2))
+                draw_prediction(frame, (l_x1, l_y1-10), left_mean, box_coords=(l_x1, l_y1, l_x2, l_y2))
+
+                CLOSE_THRESHOLD=0.7
+                if all(p < CLOSE_THRESHOLD for p in [right_mean, left_mean]):
+                    closed_frame_count+=1
+                    if closed_frame_count >= CLOSED_FRAME_THRESHOLD:
+                        current_time=time.time()
+                        if drowsy_start_time is None or current_time - drowsy_start_time >= 1.0:
+                            drowsy_start_time=current_time
+                            timestamp=int(current_time)
+                            cv2.imwrite(os.path.join(CAPTURE_DIR, f"drowsy_{timestamp}.jpg"), frame)
+                            play_beep(WARNING_BEEP)
+                        overlay=np.full(frame.shape, (0, 0, 255), dtype=np.uint8)
+                        cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
                 else:
-                    closed_counter=0
-
-                FRAME_HISTORY.append(state)
-                frame=draw_prediction(frame, state, closed_counter)
-
-                if closed_counter>=CLOSED_FRAME_THRESHOLD:
-                    overlay=np.full_like(frame, (0, 0, 255), dtype=np.uint8)
-                    frame=cv2.addWeighted(frame, 0.6, overlay, 0.4, 0)
+                    closed_frame_count=0
+                    drowsy_start_time=None
 
         cv2.imshow("Drowsiness Detection", frame)
-        if cv2.waitKey(1)&0xFF==27:  # ESC
-            break
+        if cv2.waitKey(1) & 0xFF == 27: break
 
-    cap.release()
+    capture.release()
     cv2.destroyAllWindows()
 
 if __name__=="__main__":
